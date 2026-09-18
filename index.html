@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Offline Background Remover</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 30px;
+      background: #f4f4f9;
+    }
+    .card {
+      max-width: 550px;
+      margin: 0 auto;
+      background: white;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    input[type="file"] {
+      margin: 15px 0;
+    }
+    canvas {
+      max-width: 100%;
+      height: auto;
+      margin-top: 15px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background-image: 
+        linear-gradient(45deg, #eee 25%, transparent 25%), 
+        linear-gradient(-45deg, #eee 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #eee 75%), 
+        linear-gradient(-45deg, transparent 75%, #eee 75%);
+      background-size: 20px 20px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Smart Background Remover</h2>
+  <p>Removes background edges without erasing white clothing!</p>
+  
+  <input type="file" id="upload" accept="image/*">
+  <br>
+  <canvas id="canvas"></canvas>
+  <br>
+  <button id="downloadBtn" disabled>Download PNG</button>
+</div>
+
+<script>
+  const upload = document.getElementById('upload');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  upload.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+
+      // Perform boundary-aware background removal
+      removeBackgroundFromEdges();
+
+      downloadBtn.disabled = false;
+    };
+    img.src = URL.createObjectURL(file);
+  });
+
+  function removeBackgroundFromEdges() {
+    const width = canvas.width;
+    const height = canvas.height;
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    // Sample background color from top-left corner
+    const bgR = data[0];
+    const bgG = data[1];
+    const bgB = data[2];
+
+    const tolerance = 45; // Sensitivity threshold
+    const visited = new Uint8Array(width * height);
+    const queue = [];
+
+    // Seed the queue with all outer boundary pixels
+    for (let x = 0; x < width; x++) {
+      queue.push(x, 0);
+      queue.push(x, height - 1);
+    }
+    for (let y = 0; y < height; y++) {
+      queue.push(0, y);
+      queue.push(width - 1, y);
+    }
+
+    // Flood fill algorithm starting strictly from outer edges
+    let head = 0;
+    while (head < queue.length) {
+      const x = queue[head++];
+      const y = queue[head++];
+      const pos = y * width + x;
+
+      if (visited[pos]) continue;
+      visited[pos] = 1;
+
+      const idx = pos * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+
+      // Difference from detected background color
+      const colorDiff = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
+
+      // Erase only if pixel matches background connected to outside
+      if (colorDiff < tolerance * 3) {
+        data[idx + 3] = 0; // Set transparent
+
+        // Check 4-directional neighboring pixels
+        if (x > 0) queue.push(x - 1, y);
+        if (x < width - 1) queue.push(x + 1, y);
+        if (y > 0) queue.push(x, y - 1);
+        if (y < height - 1) queue.push(x, y + 1);
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  downloadBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'no-background.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+</script>
+
+</body>
+</html>
